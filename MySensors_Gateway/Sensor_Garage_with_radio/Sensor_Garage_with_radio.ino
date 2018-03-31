@@ -14,7 +14,7 @@
 
 #include <MySensors.h>
 
-unsigned long SEND_FREQUENCY = 15000; // Minimum time between send (in milliseconds). We don't want to spam the gateway.
+unsigned long SEND_FREQUENCY = 30000; // Minimum time between send (in milliseconds). We don't want to spam the gateway.
 // ******* POWER MEASUREMENT DECLARATIONS *******
 #define DIGITAL_INPUT_SENSOR 3  // The digital input you attached your light sensor.  (Only 2 and 3 generates interrupt!)
 #define PULSE_FACTOR 1000       // Nummber of blinks per KWH of your meeter
@@ -25,6 +25,9 @@ bool pcReceived = false;
 volatile unsigned long pulseCount = 0;
 volatile unsigned long lastBlink = 0;
 volatile unsigned long watt = 0;
+volatile unsigned long wattSum = 0;
+volatile unsigned long wattMin = MAX_WATT;
+volatile unsigned long wattMax = 0;
 unsigned long oldPulseCount = 0;
 unsigned long oldWatt = 0;
 double oldKwh;
@@ -67,6 +70,9 @@ float tempC_garage;
 #define myLightID 2
 #define myGarageTempID 3
 #define myWattID 4
+#define myWattAverageID 5
+#define myWattMinID 6
+#define myWattMaxID 7
 
 //Declare messages
 MyMessage kwhMsg(mykWhID, V_KWH);
@@ -74,6 +80,10 @@ MyMessage pcMsg(myPulseCountID, V_VAR1);
 MyMessage lightMsg(myLightID, V_LIGHT);
 MyMessage tempGarageMsg(myGarageTempID, V_TEMP);
 MyMessage wattMsg(myWattID, V_WATT);
+MyMessage wattMsgAverage(myWattAverageID, V_WATT);
+MyMessage wattMsgMin(myWattMinID, V_WATT);
+MyMessage wattMsgMax(myWattMaxID, V_WATT);
+
 
 void setup() {
   #if defined(MY_DEBUG)
@@ -140,16 +150,17 @@ void presentation() {
     // Register this device as light sensor
     present(myLightID, S_LIGHT_LEVEL, "Light level");
 
-    present(myWattID, S_POWER, "Power, W");
+    present(myWattID, S_POWER, "Momentary Power, W");
+    present(myWattAverageID, S_POWER, "Average Power, W");
+    present(myWattMinID, S_POWER, "Min Power, W");
+    present(myWattMaxID, S_POWER, "Max Power, W");
 }
 
 void receive(const MyMessage &message) {
     if (message.type==V_VAR1) {
         unsigned long pc = (int)message.getLong();
-//        mySerial.print("PC:");
-//        mySerial.println(pc);
-        Serial.print("Received pc from gw:");
-        Serial.println(pc);
+//        Serial.print("Received pc from gw:");
+//        Serial.println(pc);
         pcReceived = true;
     }
 }
@@ -200,32 +211,36 @@ void loop() {
 
   // Only send values at a maximum frequency or woken up from sleep
   bool sendTime = now - lastSend > SEND_FREQUENCY;
-  watt++;
-  pulseCount++;
-  lightLevel++;
-  tempC_garage;
    
   if (pcReceived && sendTime) {
-    // New watt value has been calculated
-    if (watt != oldWatt) {
-      // Check that we dont get unresonable large watt value.
-      // could hapen when long wraps or false interrupt triggered
-      if (watt<((uint32_t)MAX_WATT)) {
-        send(wattMsg.set(watt));  // Send watt value to gw
-      }
-      Serial.print("Watt:");
-      Serial.println(watt);
-      oldWatt = watt;
+
+    // Check that we dont get unresonable large watt value.
+    // could hapen when long wraps or false interrupt triggered
+    if (watt<((uint32_t)MAX_WATT)) {
+      send(wattMsg.set(watt));  // Send watt value to gw
     }
+    if (pulseCount != oldPulseCount) {
+//      Serial.print("Pulse DIFF: ");
+//      Serial.println(pulseCount-oldPulseCount);
+//      Serial.print("Average W: ");
+//      Serial.println(wattSum/(pulseCount-oldPulseCount));
+      send(wattMsgAverage.set(wattSum/(pulseCount-oldPulseCount)));
+    }
+    if (wattMin != MAX_WATT) {
+      send(wattMsgMin.set(wattMin));
+      wattMin = MAX_WATT;
+    }
+    if (wattMax != 0) {
+      send(wattMsgMax.set(wattMax));
+      wattMax = 0;
+    }
+
     // Pulse count has changed
     if (pulseCount != oldPulseCount) {
       send(pcMsg.set(pulseCount));  // Send pulse count value to gw
       double kwh = ((double)pulseCount/((double)PULSE_FACTOR));
       oldPulseCount = pulseCount;
-//      if (kwh != oldKwh) {
-        send(kwhMsg.set(kwh, 4));  // Send kwh value to gw
-//        oldKwh = kwh;
-//      }
+      send(kwhMsg.set(kwh, 4));  // Send kwh value to gw
     }
     //END - POWER MEASUREMENT
   
@@ -280,6 +295,13 @@ void onPulse() {
     return;
   }
   watt = (3600000000.0 / interval) / ppwh;
+  if (watt < wattMin) {
+    wattMin = watt;
+  }
+    if ((watt > wattMax) && (watt < MAX_WATT)) {
+    wattMax = watt;
+  }
+  wattSum += watt;
   lastBlink = newBlink;
   pulseCount++;
 }
