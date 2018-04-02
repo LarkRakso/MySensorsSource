@@ -80,7 +80,8 @@ MyMessage pcMsg(myPulseCountID, V_VAR1);
 MyMessage lightMsg(myLightID, V_LIGHT);
 MyMessage tempGarageMsg(myGarageTempID, V_TEMP);
 MyMessage wattMsg(myWattID, V_WATT);
-MyMessage wattMsgAverage(myWattAverageID, V_WATT);
+//MyMessage wattMsgAverage(myWattAverageID, V_WATT);
+MyMessage wattMsgAverage(mykWhID, V_WATT);
 MyMessage wattMsgMin(myWattMinID, V_WATT);
 MyMessage wattMsgMax(myWattMaxID, V_WATT);
 
@@ -151,7 +152,7 @@ void presentation() {
     present(myLightID, S_LIGHT_LEVEL, "Light level");
 
     present(myWattID, S_POWER, "Momentary Power, W");
-    present(myWattAverageID, S_POWER, "Average Power, W");
+    //present(myWattAverageID, S_POWER, "Average Power, W");
     present(myWattMinID, S_POWER, "Min Power, W");
     present(myWattMaxID, S_POWER, "Max Power, W");
 }
@@ -217,7 +218,7 @@ void loop() {
     // Check that we dont get unresonable large watt value.
     // could hapen when long wraps or false interrupt triggered
     if (watt<((uint32_t)MAX_WATT)) {
-      send(wattMsg.set(watt));  // Send watt value to gw
+      send(wattMsg.set(watt));  // Send momentary watt value to gw
     }
     if (pulseCount != oldPulseCount) {
 //      Serial.print("Pulse DIFF: ");
@@ -225,6 +226,7 @@ void loop() {
 //      Serial.print("Average W: ");
 //      Serial.println(wattSum/(pulseCount-oldPulseCount));
       send(wattMsgAverage.set(wattSum/(pulseCount-oldPulseCount)));
+      wattSum = 0;
     }
     if (wattMin != MAX_WATT) {
       send(wattMsgMin.set(wattMin));
